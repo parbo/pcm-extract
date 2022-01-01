@@ -10,6 +10,29 @@ use std::cell::RefCell;
 use std::path::Path;
 use textplots::{Chart, Plot, Shape};
 
+#[derive(Copy, Clone, Debug)]
+struct Opts {
+    px: f32,
+    py: f32,
+    step: usize,
+    offset: u8,
+    flip: u8,
+    mirror: u8,
+}
+
+impl Default for Opts {
+    fn default() -> Opts {
+	Opts {
+	    px: 0.0,
+	    py: 128.0,
+	    step: 2,
+	    offset: 0,
+	    flip: 0,
+	    mirror: 0,
+	}
+    }
+}
+
 fn main() -> anyhow::Result<()> {
     env_logger::init();
 
@@ -41,12 +64,7 @@ fn main() -> anyhow::Result<()> {
     let mut input = vec![];
     file.read_to_end(&mut input).unwrap();
 
-    let px = RefCell::new(0.0);
-    let py = RefCell::new(128.0);
-    let offs = RefCell::new(0);
-    let flip = RefCell::new(0);
-    let mirror = RefCell::new(0);
-    let step = RefCell::new(2);
+    let opts = RefCell::new(Opts::default());
     let mut out = vec![];
 
     let mut repl = Repl::builder()
@@ -56,7 +74,7 @@ fn main() -> anyhow::Result<()> {
             handler: Box::new(|args| {
                 let validator = validator!(u8);
                 validator(args)?;
-                *flip.borrow_mut() = args[0].parse::<u8>()?;
+                opts.borrow_mut().flip = args[0].parse::<u8>()?;
                 Ok(CommandStatus::Done)
             })
         })
@@ -66,7 +84,7 @@ fn main() -> anyhow::Result<()> {
             handler: Box::new(|args| {
                 let validator = validator!(u8);
                 validator(args)?;
-                *mirror.borrow_mut() = args[0].parse::<u8>()?;
+                opts.borrow_mut().mirror = args[0].parse::<u8>()?;
                 Ok(CommandStatus::Done)
             })
         })
@@ -76,7 +94,7 @@ fn main() -> anyhow::Result<()> {
             handler: Box::new(|args| {
                 let validator = validator!(u8);
                 validator(args)?;
-                *offs.borrow_mut() = args[0].parse::<u8>()?;
+                opts.borrow_mut().offset = args[0].parse::<u8>()?;
                 Ok(CommandStatus::Done)
             }),
         })
@@ -86,7 +104,7 @@ fn main() -> anyhow::Result<()> {
             handler: Box::new(|args| {
                 let validator = validator!(usize);
                 validator(args)?;
-                *step.borrow_mut() = args[0].parse::<usize>()?;
+                opts.borrow_mut().step = args[0].parse::<usize>()?;
                 Ok(CommandStatus::Done)
             }),
         })
@@ -96,8 +114,8 @@ fn main() -> anyhow::Result<()> {
             handler: Box::new(|args| {
                 let validator = validator!(f32, f32);
                 validator(args)?;
-                *px.borrow_mut() = args[0].parse::<f32>()?;
-                *py.borrow_mut() = args[1].parse::<f32>()?;
+		opts.borrow_mut().px = args[0].parse::<f32>()?;
+                opts.borrow_mut().py = args[1].parse::<f32>()?;
                 Ok(CommandStatus::Done)
             }),
         })
@@ -107,20 +125,21 @@ fn main() -> anyhow::Result<()> {
     loop {
 	let mut ix = 0;
 	out.clear();
+	let opt = opts.borrow().clone();
         loop {
 	    let mut d8 = input[ix];
-	    let f = *flip.borrow();
-	    let m = *mirror.borrow();
+	    let f = opt.flip;
+	    let m = opt.mirror;
 	    if d8 > m {
-                    d8 = m + d8.overflowing_sub(m).0;
+                d8 = m + d8.overflowing_sub(m).0;
 	    }
 	    if d8 < f {
                 d8 = f.overflowing_sub(d8).0;
 	    }
             let mut d = (d8 as i8) as i16;
-            d = d.overflowing_sub(*offs.borrow() as i16).0;
+            d = d.overflowing_sub(opt.offset as i16).0;
             out.push(d.overflowing_mul(256).0);
-            ix += *step.borrow();
+            ix += opt.step;
             if ix >= input.len() {
                 break;
             }
@@ -130,14 +149,14 @@ fn main() -> anyhow::Result<()> {
         for (i, x) in out.iter().enumerate() {
             plt.push((i as f32, *x as f32));
         }
-        Chart::new(300, 60, *px.borrow(), *py.borrow())
+        Chart::new(300, 60, opt.px, opt.py)
             .lineplot(&Shape::Steps(&plt))
             .display();
         let mut plt2 = vec![];
-        for (i, x) in input.iter().step_by(*step.borrow()).enumerate() {
+        for (i, x) in input.iter().step_by(opt.step).enumerate() {
             plt2.push((i as f32, *x as f32));
         }
-        Chart::new(300, 60, *px.borrow(), *py.borrow())
+        Chart::new(300, 60, opt.px, opt.py)
             .lineplot(&Shape::Steps(&plt2))
             .display();
         if let Ok(LoopStatus::Continue) = repl.next() {
