@@ -214,6 +214,68 @@ fn main() -> anyhow::Result<()> {
             },
         )
         .add(
+            "+",
+            easy_repl::Command {
+                description: "Zoom in".into(),
+                args_info: vec![],
+                handler: Box::new(|_args| {
+		    let from = opts.borrow().from;
+		    let to = opts.borrow().to;
+		    let amount = (to - from) / 4;
+                    opts.borrow_mut().from = from + amount;
+                    opts.borrow_mut().to = to - amount;
+                    Ok(CommandStatus::Done)
+                }),
+            },
+        )
+        .add(
+            "-",
+            easy_repl::Command {
+                description: "Zoom out".into(),
+                args_info: vec![],
+                handler: Box::new(|_args| {
+		    let from = opts.borrow().from;
+		    let to = opts.borrow().to;
+		    let amount = (to - from) / 2;
+		    opts.borrow_mut().from = from - amount.min(from);
+		    opts.borrow_mut().to = to + amount;
+                    Ok(CommandStatus::Done)
+                }),
+            },
+        )
+        .add(
+            "<",
+            easy_repl::Command {
+                description: "Move left".into(),
+                args_info: vec![],
+                handler: Box::new(|_args| {
+		    let from = opts.borrow().from;
+		    let to = opts.borrow().to;
+		    let w = to - from;
+		    let amount = w / 2;
+		    opts.borrow_mut().from = from - amount.min(from);
+		    opts.borrow_mut().to = from - amount.min(from) + w;
+                    Ok(CommandStatus::Done)
+                }),
+            },
+        )
+        .add(
+            ">",
+            easy_repl::Command {
+                description: "Move right".into(),
+                args_info: vec![],
+                handler: Box::new(|_args| {
+		    let from = opts.borrow().from;
+		    let to = opts.borrow().to;
+		    let w = to - from;
+		    let amount = w / 2;
+		    opts.borrow_mut().from = from + amount;
+		    opts.borrow_mut().to = from + amount + w;
+                    Ok(CommandStatus::Done)
+                }),
+            },
+        )
+        .add(
             "play",
             easy_repl::Command {
                 description: "Play range".into(),
