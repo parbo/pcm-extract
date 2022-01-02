@@ -29,6 +29,7 @@ enum Compression {
     DPCM2,
     DPCM3,
     DPCMROQ,
+    DPCMSDX,
 }
 
 #[derive(Copy, Clone, Debug)]
@@ -36,7 +37,8 @@ struct Opts {
     from: usize,
     to: usize,
     step: usize,
-    offset: u8,
+    skip: usize,
+    k: u8,
     flip: u8,
     mirror: u8,
     sign: u8,
@@ -48,9 +50,10 @@ impl Default for Opts {
     fn default() -> Opts {
         Opts {
             from: 0,
-            to: 128,
-            step: 2,
-            offset: 0,
+            to: 8192,
+            step: 1,
+            skip: 0,
+            k: 0,
             flip: 0,
             mirror: 0,
             sign: 1,
@@ -94,7 +97,7 @@ fn main() -> anyhow::Result<()> {
     let mut input = vec![];
     file.read_to_end(&mut input).unwrap();
 
-    let opts = RefCell::new(Opts::default());
+    let opt_ref = RefCell::new(Opts::default());
     let play = RefCell::new(false);
     let mut out = vec![];
 
@@ -107,7 +110,7 @@ fn main() -> anyhow::Result<()> {
                 handler: Box::new(|args| {
                     let validator = validator!(u8);
                     validator(args)?;
-                    opts.borrow_mut().flip = args[0].parse::<u8>()?;
+                    opt_ref.borrow_mut().flip = args[0].parse::<u8>()?;
                     Ok(CommandStatus::Done)
                 }),
             },
@@ -120,7 +123,7 @@ fn main() -> anyhow::Result<()> {
                 handler: Box::new(|args| {
                     let validator = validator!(u8);
                     validator(args)?;
-                    opts.borrow_mut().mirror = args[0].parse::<u8>()?;
+                    opt_ref.borrow_mut().mirror = args[0].parse::<u8>()?;
                     Ok(CommandStatus::Done)
                 }),
             },
@@ -133,20 +136,20 @@ fn main() -> anyhow::Result<()> {
                 handler: Box::new(|args| {
                     let validator = validator!(u8);
                     validator(args)?;
-                    opts.borrow_mut().sign = args[0].parse::<u8>()?;
+                    opt_ref.borrow_mut().sign = args[0].parse::<u8>()?;
                     Ok(CommandStatus::Done)
                 }),
             },
         )
         .add(
-            "offset",
+            "k",
             easy_repl::Command {
-                description: "Set offset".into(),
+                description: "Set k".into(),
                 args_info: vec![],
                 handler: Box::new(|args| {
                     let validator = validator!(u8);
                     validator(args)?;
-                    opts.borrow_mut().offset = args[0].parse::<u8>()?;
+                    opt_ref.borrow_mut().k = args[0].parse::<u8>()?;
                     Ok(CommandStatus::Done)
                 }),
             },
@@ -164,7 +167,7 @@ fn main() -> anyhow::Result<()> {
                 handler: Box::new(|args| {
                     let validator = validator!(Representation);
                     validator(args)?;
-                    opts.borrow_mut().representation = args[0].parse::<Representation>()?;
+                    opt_ref.borrow_mut().representation = args[0].parse::<Representation>()?;
                     Ok(CommandStatus::Done)
                 }),
             },
@@ -179,11 +182,12 @@ fn main() -> anyhow::Result<()> {
                     Compression::DPCM2.to_string(),
                     Compression::DPCM3.to_string(),
                     Compression::DPCMROQ.to_string(),
+                    Compression::DPCMSDX.to_string(),
                 ],
                 handler: Box::new(|args| {
                     let validator = validator!(Compression);
                     validator(args)?;
-                    opts.borrow_mut().compression = args[0].parse::<Compression>()?;
+                    opt_ref.borrow_mut().compression = args[0].parse::<Compression>()?;
                     Ok(CommandStatus::Done)
                 }),
             },
@@ -196,7 +200,20 @@ fn main() -> anyhow::Result<()> {
                 handler: Box::new(|args| {
                     let validator = validator!(usize);
                     validator(args)?;
-                    opts.borrow_mut().step = args[0].parse::<usize>()?;
+                    opt_ref.borrow_mut().step = args[0].parse::<usize>()?;
+                    Ok(CommandStatus::Done)
+                }),
+            },
+        )
+        .add(
+            "skip",
+            easy_repl::Command {
+                description: "Set skip".into(),
+                args_info: vec![],
+                handler: Box::new(|args| {
+                    let validator = validator!(usize);
+                    validator(args)?;
+                    opt_ref.borrow_mut().skip = args[0].parse::<usize>()?;
                     Ok(CommandStatus::Done)
                 }),
             },
@@ -209,8 +226,8 @@ fn main() -> anyhow::Result<()> {
                 handler: Box::new(|args| {
                     let validator = validator!(usize, usize);
                     validator(args)?;
-                    opts.borrow_mut().from = args[0].parse::<usize>()?;
-                    opts.borrow_mut().to = args[1].parse::<usize>()?;
+                    opt_ref.borrow_mut().from = args[0].parse::<usize>()?;
+                    opt_ref.borrow_mut().to = args[1].parse::<usize>()?;
                     Ok(CommandStatus::Done)
                 }),
             },
@@ -221,11 +238,11 @@ fn main() -> anyhow::Result<()> {
                 description: "Zoom in".into(),
                 args_info: vec![],
                 handler: Box::new(|_args| {
-		    let from = opts.borrow().from;
-		    let to = opts.borrow().to;
-		    let amount = (to - from) / 4;
-                    opts.borrow_mut().from = from + amount;
-                    opts.borrow_mut().to = to - amount;
+                    let from = opt_ref.borrow().from;
+                    let to = opt_ref.borrow().to;
+                    let amount = (to - from) / 4;
+                    opt_ref.borrow_mut().from = from + amount;
+                    opt_ref.borrow_mut().to = to - amount;
                     Ok(CommandStatus::Done)
                 }),
             },
@@ -236,11 +253,11 @@ fn main() -> anyhow::Result<()> {
                 description: "Zoom out".into(),
                 args_info: vec![],
                 handler: Box::new(|_args| {
-		    let from = opts.borrow().from;
-		    let to = opts.borrow().to;
-		    let amount = (to - from) / 2;
-		    opts.borrow_mut().from = from - amount.min(from);
-		    opts.borrow_mut().to = to + amount;
+                    let from = opt_ref.borrow().from;
+                    let to = opt_ref.borrow().to;
+                    let amount = (to - from) / 2;
+                    opt_ref.borrow_mut().from = from - amount.min(from);
+                    opt_ref.borrow_mut().to = to + amount;
                     Ok(CommandStatus::Done)
                 }),
             },
@@ -251,12 +268,12 @@ fn main() -> anyhow::Result<()> {
                 description: "Move left".into(),
                 args_info: vec![],
                 handler: Box::new(|_args| {
-		    let from = opts.borrow().from;
-		    let to = opts.borrow().to;
-		    let w = to - from;
-		    let amount = w / 2;
-		    opts.borrow_mut().from = from - amount.min(from);
-		    opts.borrow_mut().to = from - amount.min(from) + w;
+                    let from = opt_ref.borrow().from;
+                    let to = opt_ref.borrow().to;
+                    let w = to - from;
+                    let amount = w / 2;
+                    opt_ref.borrow_mut().from = from - amount.min(from);
+                    opt_ref.borrow_mut().to = from - amount.min(from) + w;
                     Ok(CommandStatus::Done)
                 }),
             },
@@ -267,12 +284,12 @@ fn main() -> anyhow::Result<()> {
                 description: "Move right".into(),
                 args_info: vec![],
                 handler: Box::new(|_args| {
-		    let from = opts.borrow().from;
-		    let to = opts.borrow().to;
-		    let w = to - from;
-		    let amount = w / 2;
-		    opts.borrow_mut().from = from + amount;
-		    opts.borrow_mut().to = from + amount + w;
+                    let from = opt_ref.borrow().from;
+                    let to = opt_ref.borrow().to;
+                    let w = to - from;
+                    let amount = w / 2;
+                    opt_ref.borrow_mut().from = from + amount;
+                    opt_ref.borrow_mut().to = from + amount + w;
                     Ok(CommandStatus::Done)
                 }),
             },
@@ -292,9 +309,9 @@ fn main() -> anyhow::Result<()> {
         .expect("Failed to create repl");
 
     loop {
-        let mut ix = 0;
+        let opt = opt_ref.borrow().clone();
+        let mut ix = opt.skip;
         out.clear();
-        let opt = opts.borrow().clone();
         loop {
             let mut d8 = input[ix];
             let d = match opt.representation {
@@ -308,7 +325,7 @@ fn main() -> anyhow::Result<()> {
                         d8 = f.overflowing_sub(d8).0;
                     }
                     let d = (d8 as i8) as i16;
-                    d.overflowing_sub(opt.offset as i16).0
+                    d.overflowing_sub(opt.k as i16).0
                 }
                 Representation::OnesComplement => {
                     if d8 < 128 {
@@ -335,36 +352,58 @@ fn main() -> anyhow::Result<()> {
                         }
                     }
                 }
-                Representation::ExcessK => (d8 as i16).overflowing_sub(opt.offset as i16).0,
+                Representation::ExcessK => (d8 as i16).overflowing_sub(opt.k as i16).0,
             };
             match opt.compression {
-                Compression::DPCM0 => out.push(d.overflowing_mul(256).0),
+                Compression::DPCM0 => out.push(d.saturating_mul(256)),
                 Compression::DPCM1 => {
-                    let err = d;
-                    let n1 = if out.len() > 0 { out[out.len() - 1] } else { 0 };
-                    out.push(n1 + err);
+                    let err = d8;
+                    let n1: i16 = if out.len() > 0 { out[out.len() - 1] } else { 0 };
+                    if err < 128 {
+                        out.push(n1.saturating_add(err as i16));
+                    } else {
+                        out.push(n1.saturating_sub((err - 128) as i16));
+                    }
                 }
                 Compression::DPCM2 => {
                     let err = d;
-                    let n1 = if out.len() > 0 { out[out.len() - 1] } else { 0 };
-                    let n2 = if out.len() > 1 { out[out.len() - 2] } else { 0 };
-                    out.push((2 * n1 - n2) + err);
+                    let n1: i16 = if out.len() > 0 { out[out.len() - 1] } else { 0 };
+                    let n2: i16 = if out.len() > 1 { out[out.len() - 2] } else { 0 };
+                    out.push(n1.saturating_mul(2).saturating_sub(n2).saturating_add(err));
                 }
                 Compression::DPCM3 => {
                     let err = d;
-                    let n1 = if out.len() > 0 { out[out.len() - 1] } else { 0 };
-                    let n2 = if out.len() > 1 { out[out.len() - 2] } else { 0 };
-                    let n3 = if out.len() > 2 { out[out.len() - 3] } else { 0 };
-                    out.push(3 * n1 - 3 * n2 + n3 + err);
+                    let n1: i16 = if out.len() > 0 { out[out.len() - 1] } else { 0 };
+                    let n2: i16 = if out.len() > 1 { out[out.len() - 2] } else { 0 };
+                    let n3: i16 = if out.len() > 2 { out[out.len() - 3] } else { 0 };
+                    out.push(
+                        n1.saturating_mul(3)
+                            .saturating_sub(n2.saturating_mul(3))
+                            .saturating_add(n3)
+                            .saturating_add(err),
+                    );
                 }
                 Compression::DPCMROQ => {
                     let err = d8;
-                    let n1 = if out.len() > 0 { out[out.len() - 1] } else { 0 };
-		    if err < 128 {
-			out.push(n1 + ((128 - err) * (128 - err)) as i16);
-		    } else {
-			out.push(n1 - (err * err) as i16);
-		    }
+                    let mut n1: i16 = if out.len() > 0 { out[out.len() - 1] } else { 0 };
+                    if err < 128 {
+                        out.push(n1.saturating_add(err as i16 * err as i16));
+                    } else {
+                        out.push(n1.saturating_sub((err - 128) as i16 * (err - 128) as i16));
+                    }
+                }
+                Compression::DPCMSDX => {
+                    let n = d8 as i16;
+                    let mut n1: i16 = if out.len() > 0 { out[out.len() - 1] } else { 0 };
+                    if d8 & 1 == 0 {
+                        n1 = 0;
+                    }
+                    let sq = n * n * 2;
+                    if n < 0 {
+                        out.push(n1.saturating_add(sq as i16));
+                    } else {
+                        out.push(n1.saturating_sub(sq as i16));
+                    }
                 }
             }
             if ix < 10 {
@@ -384,7 +423,7 @@ fn main() -> anyhow::Result<()> {
             .lineplot(&Shape::Steps(&plt))
             .display();
         let mut plt2 = vec![];
-        for (i, x) in input.iter().step_by(opt.step).enumerate() {
+        for (i, x) in input.iter().skip(opt.skip).step_by(opt.step).enumerate() {
             plt2.push((i as f32, *x as f32));
         }
         Chart::new(300, 60, opt.from as f32, opt.to as f32)
