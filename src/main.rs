@@ -28,6 +28,7 @@ enum Compression {
     DPCM1,
     DPCM2,
     DPCM3,
+    DPCMROQ,
 }
 
 #[derive(Copy, Clone, Debug)]
@@ -177,6 +178,7 @@ fn main() -> anyhow::Result<()> {
                     Compression::DPCM1.to_string(),
                     Compression::DPCM2.to_string(),
                     Compression::DPCM3.to_string(),
+                    Compression::DPCMROQ.to_string(),
                 ],
                 handler: Box::new(|args| {
                     let validator = validator!(Compression);
@@ -355,6 +357,15 @@ fn main() -> anyhow::Result<()> {
                     let n3 = if out.len() > 2 { out[out.len() - 3] } else { 0 };
                     out.push(3 * n1 - 3 * n2 + n3 + err);
                 }
+                Compression::DPCMROQ => {
+                    let err = d8;
+                    let n1 = if out.len() > 0 { out[out.len() - 1] } else { 0 };
+		    if err < 128 {
+			out.push(n1 + ((128 - err) * (128 - err)) as i16);
+		    } else {
+			out.push(n1 - (err * err) as i16);
+		    }
+                }
             }
             if ix < 10 {
                 println!("d: {}, out: {}", d, out.last().unwrap());
@@ -400,7 +411,7 @@ fn main() -> anyhow::Result<()> {
                 move |data: &mut [i16], _: &cpal::OutputCallbackInfo| {
                     for frame in data.chunks_mut(sc.channels as usize) {
                         // up-sample
-                        let ix = from + frames / 4;
+                        let ix = from + frames / 2;
                         if ix < to {
                             let value = cpal::Sample::from::<i16>(&out_copy[ix]);
                             for sample in frame.iter_mut() {
